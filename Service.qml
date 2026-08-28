@@ -1,6 +1,8 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Quickshell.Wayland
+import qs.Commons
 import "TimerModel.js" as TimerModel
 
 Item {
@@ -17,6 +19,8 @@ Item {
   readonly property string notificationExecutable: omarchyPath !== ""
     ? omarchyPath + "/bin/omarchy-notification-send"
     : "omarchy-notification-send"
+  readonly property string alertSoundFile: TimerModel.soundFile(config.soundName)
+  readonly property int flashIntervalMs: TimerModel.flashSpeedMs(config.flashSpeed)
 
   property var config: TimerModel.normalizeConfig({})
   property var timerState: TimerModel.stoppedState(config, Date.now())
@@ -28,6 +32,9 @@ Item {
   property bool stateDirReady: false
   property bool savePending: false
   property string loadedStateText: ""
+  property bool alerting: false
+  property bool flashActive: false
+  property int flashTicksLeft: 0
 
   readonly property string status: timerState.status
   readonly property string phase: timerState.phase
@@ -38,6 +45,34 @@ Item {
   readonly property bool stopped: status === TimerModel.StatusStopped
   readonly property bool running: status === TimerModel.StatusRunning
   readonly property bool paused: status === TimerModel.StatusPaused
+  readonly property bool soundEnabled: config.soundEnabled !== false
+  readonly property string soundName: config.soundName || "complete"
+  readonly property string flashScreenMode: config.flashScreenMode || "off"
+  readonly property bool flashBackgroundEnabled: flashScreenMode === "background"
+  readonly property bool flashEverythingEnabled: flashScreenMode === "all"
+  readonly property bool flashBarEnabled: config.flashBarEnabled !== false
+  readonly property bool flashBorderEnabled: config.flashBorderEnabled !== false
+  readonly property int flashBorderPx: 5
+  readonly property int flashCount: Math.max(1, Number(config.flashCount || 3))
+  readonly property string flashSpeed: config.flashSpeed || "normal"
+  readonly property var hostBar: shell && shell.bar ? shell.bar : null
+  readonly property string barPosition: hostBar ? String(hostBar.position || "top") : "top"
+  readonly property bool barVertical: barPosition === "left" || barPosition === "right"
+  readonly property int barPixelSize: hostBar && hostBar.barSize ? hostBar.barSize : Style.bar.sizeHorizontal
+  readonly property string backgroundLink: stateHome + "/omarchy/current/background"
+  readonly property string runtimeDir: (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp") + "/omadoro"
+  readonly property string invertedWallpaperPath: runtimeDir + "/background-invert.jpg"
+  property int invertVersion: 0
+
+  function pluginPath(name) {
+    var url = String(Qt.resolvedUrl(name) || "")
+    if (url.indexOf("file://") === 0) {
+      var path = url.substring(7)
+      if (path.charAt(0) !== "/") path = "/" + path
+      return decodeURIComponent(path)
+    }
+    return url
+  }
 
   function configure(settings) {
     var next = TimerModel.normalizeConfig(settings || {})
@@ -67,7 +102,8 @@ Item {
     initialized = true
     lastTickMs = Date.now()
     setState(result.state, true)
-    if (result.notifyPhase !== "") notifyPhaseStarted(result.notifyPhase)
+    if (result.notifyPhase !== "") notifyPhaseStarted(result.notifyPhase, false)
+    refreshInvertedWallpaper()
   }
 
   function setState(next, persist) {
@@ -117,7 +153,7 @@ Item {
     if (lastTickMs > 0 && now - lastTickMs > 5000) {
       var recovered = TimerModel.recoverInterrupted(timerState, config, now)
       setState(recovered.state, true)
-      if (recovered.notifyPhase !== "") notifyPhaseStarted(recovered.notifyPhase)
+      if (recovered.notifyPhase !== "") notifyPhaseStarted(recovered.notifyPhase, false)
       lastTickMs = now
       return
     }
@@ -130,7 +166,7 @@ Item {
     lastTickMs = now
   }
 
-  function notifyPhaseStarted(startedPhase) {
+  function notifyPhaseStarted(startedPhase, withAlerts) {
     var title = TimerModel.phaseLabel(startedPhase) + " started"
     var minutes = Math.round(TimerModel.durationSeconds(startedPhase, config) / 60)
     var description = startedPhase === TimerModel.PhaseWork
@@ -144,6 +180,52 @@ Item {
       title,
       description
     ])
+    if (withAlerts === false) return
+    playAlertSound()
+    startAlertFlash()
+  }
+
+  function playAlertSound() {
+    if (!soundEnabled) return
+    previewSound()
+  }
+
+  function previewSound() {
+    Quickshell.execDetached([
+      "pw-play",
+      "--volume=1.0",
+      "--media-role", "Event",
+      alertSoundFile
+    ])
+  }
+
+  function previewAlert() {
+    playAlertSound()
+    startAlertFlash()
+  }
+
+  function refreshInvertedWallpaper() {
+    if (!invertWallpaperProc.running) invertWallpaperProc.running = true
+  }
+
+  function startAlertFlash() {
+    if (!flashEverythingEnabled && !flashBackgroundEnabled
+        && !flashBarEnabled && !flashBorderEnabled) return
+    var intervalSec = (flashIntervalMs / 1000).toFixed(3)
+    flashTicksLeft = flashCount * 2
+    alerting = true
+    flashActive = true
+    flashTimer.restart()
+    if (flashBackgroundEnabled && root.invertVersion === 0) refreshInvertedWallpaper()
+    if (flashEverythingEnabled) {
+      Quickshell.execDetached([
+        "bash",
+        pluginPath("flash-invert.sh"),
+        String(flashCount),
+        intervalSec,
+        intervalSec
+      ])
+    }
   }
 
   function scheduleSave() {
@@ -159,7 +241,10 @@ Item {
     stateFile.setText(JSON.stringify(snapshot, null, 2) + "\n")
   }
 
-  Component.onCompleted: stateDirProcess.running = true
+  Component.onCompleted: {
+    stateDirProcess.running = true
+    refreshInvertedWallpaper()
+  }
 
   Timer {
     interval: 250
@@ -175,9 +260,159 @@ Item {
     onTriggered: root.flushState()
   }
 
+  Timer {
+    id: flashTimer
+    interval: root.flashIntervalMs
+    repeat: true
+    onTriggered: {
+      root.alerting = !root.alerting
+      root.flashTicksLeft -= 1
+      if (root.flashTicksLeft <= 0) {
+        root.alerting = false
+        flashHideTimer.restart()
+        stop()
+      }
+    }
+  }
+
+  Timer {
+    id: flashHideTimer
+    interval: root.flashIntervalMs
+    repeat: false
+    onTriggered: root.flashActive = false
+  }
+
+  Variants {
+    model: Quickshell.screens
+
+    PanelWindow {
+      required property var modelData
+      screen: modelData
+      visible: root.flashActive && (root.flashBarEnabled || root.flashBorderEnabled)
+      color: "transparent"
+      anchors { top: true; bottom: true; left: true; right: true }
+      WlrLayershell.namespace: "omadoro-flash"
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+      exclusionMode: ExclusionMode.Ignore
+      mask: Region {}
+
+      Item {
+        anchors.fill: parent
+        opacity: root.alerting ? 1 : 0
+
+        Behavior on opacity {
+          NumberAnimation {
+            duration: Math.max(70, root.flashIntervalMs)
+            easing.type: Easing.InOutCubic
+          }
+        }
+
+        Rectangle {
+          visible: root.flashBarEnabled
+          color: Color.foreground
+          x: root.barPosition === "right" ? parent.width - root.barPixelSize : 0
+          y: root.barPosition === "bottom" ? parent.height - root.barPixelSize : 0
+          width: root.barVertical ? root.barPixelSize : parent.width
+          height: root.barVertical ? parent.height : root.barPixelSize
+        }
+
+        Rectangle {
+          visible: root.flashBorderEnabled
+          anchors.top: parent.top
+          width: parent.width
+          height: root.flashBorderPx
+          color: Color.foreground
+        }
+
+        Rectangle {
+          visible: root.flashBorderEnabled
+          anchors.bottom: parent.bottom
+          width: parent.width
+          height: root.flashBorderPx
+          color: Color.foreground
+        }
+
+        Rectangle {
+          visible: root.flashBorderEnabled
+          anchors.left: parent.left
+          width: root.flashBorderPx
+          height: parent.height
+          color: Color.foreground
+        }
+
+        Rectangle {
+          visible: root.flashBorderEnabled
+          anchors.right: parent.right
+          width: root.flashBorderPx
+          height: parent.height
+          color: Color.foreground
+        }
+      }
+    }
+  }
+
+  Variants {
+    model: Quickshell.screens
+
+    PanelWindow {
+      required property var modelData
+      screen: modelData
+      visible: root.flashActive && root.flashBackgroundEnabled && root.invertVersion > 0
+      color: "transparent"
+      anchors { top: true; bottom: true; left: true; right: true }
+      WlrLayershell.namespace: "omadoro-background-flash"
+      WlrLayershell.layer: WlrLayer.Bottom
+      WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+      exclusionMode: ExclusionMode.Ignore
+      mask: Region {}
+
+      Image {
+        anchors.fill: parent
+        source: root.invertVersion > 0
+          ? ("file://" + root.invertedWallpaperPath + "?v=" + root.invertVersion)
+          : ""
+        fillMode: Image.PreserveAspectCrop
+        asynchronous: true
+        cache: false
+        opacity: root.alerting ? 1 : 0
+
+        Behavior on opacity {
+          NumberAnimation {
+            duration: Math.max(70, root.flashIntervalMs)
+            easing.type: Easing.InOutCubic
+          }
+        }
+      }
+    }
+  }
+
+  Process {
+    id: invertWallpaperProc
+    command: [
+      "bash", "-c",
+      "set -euo pipefail; mkdir -p \"$(dirname \"$2\")\"; src=$(readlink -f \"$1\"); magick \"$src\" -negate \"$2\"",
+      "omadoro-bg",
+      root.backgroundLink,
+      root.invertedWallpaperPath
+    ]
+    onExited: function(exitCode) {
+      if (exitCode === 0) root.invertVersion += 1
+    }
+  }
+
+  FileView {
+    path: root.backgroundLink
+    watchChanges: true
+    printErrors: false
+    onFileChanged: root.refreshInvertedWallpaper()
+    onLoaded: root.refreshInvertedWallpaper()
+    onLoadFailed: root.refreshInvertedWallpaper()
+  }
+
   Process {
     id: stateDirProcess
-    command: ["mkdir", "-p", root.stateDir]
+    command: ["mkdir", "-p", root.stateDir, root.runtimeDir]
     onExited: function(exitCode) {
       root.stateDirReady = exitCode === 0
       if (!root.stateDirReady) {

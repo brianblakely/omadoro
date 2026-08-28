@@ -21,10 +21,14 @@ Click the bar icon to open the timer panel.
 | `` / `` | Pause or resume                           |
 | `󰐕`       | Add five minutes                          |
 | ``       | Skip to the next phase                    |
+| `󰒓`       | Alert settings (sound, flashes, invert) |
 
 When the timer is stopped, press Play to begin a fresh cycle. Omadoro switches
-between work and break phases automatically and sends a notification when the
-next phase begins.
+between work and break phases automatically. When the next phase begins it
+sends a notification, plays a sound, and can flash the bar, a 5px monitor
+border, and an eased invert of either the wallpaper or the whole screen
+(including windows). Open the gear in the corner of the timer panel to change
+the sound and which flashes run.
 
 The default cycle is:
 
@@ -56,9 +60,17 @@ omarchy bar plugin set b.omadoro workMinutes 25 --json
 omarchy bar plugin set b.omadoro shortBreakMinutes 5 --json
 omarchy bar plugin set b.omadoro longBreakMinutes 15 --json
 omarchy bar plugin set b.omadoro workPhasesPerLongBreak 4 --json
+omarchy bar plugin set b.omadoro soundEnabled true --json
+omarchy bar plugin set b.omadoro soundName complete --json
+omarchy bar plugin set b.omadoro flashScreenMode background --json
+omarchy bar plugin set b.omadoro flashBarEnabled true --json
+omarchy bar plugin set b.omadoro flashBorderEnabled true --json
+omarchy bar plugin set b.omadoro flashCount 3 --json
+omarchy bar plugin set b.omadoro flashSpeed normal --json
 ```
 
-New values apply from the next phase onward.
+Phase lengths apply from the next phase onward. Sound and flash take effect
+immediately.
 
 ## Update
 

@@ -45,7 +45,9 @@ ln -s "$OMARCHY_PATH/bin" "$test_root/bin"
 ln -s "$OMARCHY_PATH/config" "$test_root/config"
 cp "$ROOT/manifest.json" "$ROOT/Service.qml" "$ROOT/TimerModel.js" \
   "$ROOT/CircularProgress.qml" "$ROOT/BarWidget.qml" "$ROOT/Panel.qml" \
+  "$ROOT/flash-invert.sh" \
   "$plugin_dir/"
+chmod +x "$plugin_dir/flash-invert.sh"
 
 jq -n '{
   version: 1,
