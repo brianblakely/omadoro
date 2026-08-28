@@ -19,6 +19,7 @@ BarWidget {
     : false
   readonly property real openPanelIndicatorWidth: Style.bar.iconCanvas
   readonly property real openPanelIndicatorHeight: Style.bar.iconCanvas
+  readonly property bool alerting: timerService ? timerService.alerting === true : false
 
   function syncService() {
     if (timerService && typeof timerService.configure === "function")
@@ -79,11 +80,19 @@ BarWidget {
       ? root.timerService.phaseLabel + " · " + root.timerService.remainingText
       : "Omadoro"
     iconComponent: Component {
-      CircularProgress {
-        progress: root.timerService ? root.timerService.progress : 0
-        trackColor: Color.muted
-        fillColor: Color.accent
-        strokeWidth: Math.max(2, Style.spaceReal(2))
+      Item {
+        Rectangle {
+          anchors.fill: parent
+          color: root.alerting ? Color.foreground : "transparent"
+        }
+
+        CircularProgress {
+          anchors.fill: parent
+          progress: root.timerService ? root.timerService.progress : 0
+          trackColor: root.alerting ? Color.background : Color.muted
+          fillColor: root.alerting ? Color.background : Color.accent
+          strokeWidth: Math.max(2, Style.spaceReal(2))
+        }
       }
     }
     onPressed: function(buttonCode) {

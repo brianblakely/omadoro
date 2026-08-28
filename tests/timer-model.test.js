@@ -24,9 +24,56 @@ function closeTo(actual, expected, message) {
 
 assert.deepEqual(
   { ...model.normalizeConfig({ workMinutes: 0, shortBreakMinutes: 100, longBreakMinutes: 999, workPhasesPerLongBreak: 0 }) },
-  { workMinutes: 1, shortBreakMinutes: 60, longBreakMinutes: 120, workPhasesPerLongBreak: 1 },
+  {
+    workMinutes: 1,
+    shortBreakMinutes: 60,
+    longBreakMinutes: 120,
+    workPhasesPerLongBreak: 1,
+    soundEnabled: true,
+    soundName: "complete",
+    flashScreenMode: "off",
+    flashBarEnabled: true,
+    flashBorderEnabled: true,
+    flashCount: 3,
+    flashSpeed: "normal"
+  },
   "configuration values are integer-clamped to the manifest ranges"
 )
+
+assert.equal(model.booleanSetting(undefined, true), true)
+assert.equal(model.booleanSetting("false", true), false)
+assert.equal(model.booleanSetting("0", true), false)
+assert.equal(model.booleanSetting("off", true), false)
+assert.equal(model.booleanSetting(false, true), false)
+assert.equal(model.booleanSetting("true", false), true)
+assert.equal(model.booleanSetting("yes", false), true)
+assert.equal(
+  model.normalizeConfig({ soundEnabled: "off", flashEnabled: 0 }).soundEnabled,
+  false
+)
+assert.equal(
+  model.normalizeConfig({ soundEnabled: "off", flashScreenEnabled: 0 }).flashScreenMode,
+  "off"
+)
+assert.equal(model.normalizeConfig({ flashCount: 0 }).flashCount, 1)
+assert.equal(model.normalizeConfig({ flashCount: 99 }).flashCount, 8)
+assert.equal(model.normalizeConfig({ flashCount: "5" }).flashCount, 5)
+assert.equal(model.normalizeConfig({ flashScreenEnabled: true }).flashScreenMode, "all")
+assert.equal(model.normalizeConfig({ flashScreenMode: "background" }).flashScreenMode, "background")
+assert.equal(model.cycleScreenMode("off", 1), "background")
+assert.equal(model.normalizeConfig({ soundName: "alarm" }).soundName, "alarm")
+assert.equal(model.normalizeConfig({ soundName: "nope" }).soundName, "complete")
+assert.equal(model.normalizeConfig({ flashSpeed: "slow" }).flashSpeed, "slow")
+assert.equal(model.soundFile("bell"), "/usr/share/sounds/freedesktop/stereo/bell.oga")
+assert.notEqual(model.soundFile("attention"), model.soundFile("warning"))
+assert.equal(model.soundFile("attention"), "/usr/share/sounds/freedesktop/stereo/message-new-instant.oga")
+assert.equal(model.soundFile("chime"), "/usr/share/sounds/freedesktop/stereo/complete.oga")
+assert.equal(model.soundFile("complete"), "/usr/share/sounds/freedesktop/stereo/service-login.oga")
+assert.equal(model.soundFile("pop"), "/usr/share/sounds/freedesktop/stereo/message.oga")
+assert.equal(model.soundFile("message"), "/usr/share/sounds/freedesktop/stereo/device-added.oga")
+assert.equal(model.cycleSoundName("complete", 1), "attention")
+assert.equal(model.flashSpeedMs("fast"), 90)
+assert.equal(model.cycleFlashSpeed("normal", 1), "slow")
 
 let state = model.stoppedState(config, 0)
 assert.equal(state.status, model.StatusStopped)

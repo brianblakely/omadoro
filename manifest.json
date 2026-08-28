@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "b.omadoro",
   "name": "Omadoro",
-  "version": "0.0.5",
+  "version": "0.1.0",
   "author": "Brian Blakely",
   "license": "MIT",
   "description": "A Pomodoro timer for the Omarchy bar.",
@@ -21,7 +21,14 @@
       "workMinutes": 25,
       "shortBreakMinutes": 5,
       "longBreakMinutes": 15,
-      "workPhasesPerLongBreak": 4
+      "workPhasesPerLongBreak": 4,
+      "soundEnabled": true,
+      "soundName": "complete",
+      "flashScreenMode": "off",
+      "flashBarEnabled": true,
+      "flashBorderEnabled": true,
+      "flashCount": 3,
+      "flashSpeed": "normal"
     },
     "schema": [
       {
@@ -59,6 +66,54 @@
         "max": 12,
         "step": 1,
         "defaultValue": 4
+      },
+      {
+        "key": "soundEnabled",
+        "type": "boolean",
+        "label": "Play a sound when a phase starts",
+        "defaultValue": true
+      },
+      {
+        "key": "soundName",
+        "type": "string",
+        "label": "Alert sound",
+        "defaultValue": "complete"
+      },
+      {
+        "key": "flashScreenMode",
+        "type": "string",
+        "label": "Screen invert",
+        "description": "Off, background wallpaper only, or the whole screen including windows.",
+        "defaultValue": "off"
+      },
+      {
+        "key": "flashBarEnabled",
+        "type": "boolean",
+        "label": "Flash the bar",
+        "description": "Invert the status bar when a phase starts.",
+        "defaultValue": true
+      },
+      {
+        "key": "flashBorderEnabled",
+        "type": "boolean",
+        "label": "Flash the border",
+        "description": "Draw a 5px frame around the monitor when a phase starts.",
+        "defaultValue": true
+      },
+      {
+        "key": "flashCount",
+        "type": "integer",
+        "label": "Flash count",
+        "min": 1,
+        "max": 8,
+        "step": 1,
+        "defaultValue": 3
+      },
+      {
+        "key": "flashSpeed",
+        "type": "string",
+        "label": "Flash speed",
+        "defaultValue": "normal"
       }
     ]
   }

@@ -18,14 +18,147 @@ function boundedInteger(value, fallback, minimum, maximum) {
   return Math.max(minimum, Math.min(maximum, parsed))
 }
 
+function booleanSetting(value, fallback) {
+  if (value === undefined || value === null || value === "") return fallback
+  if (typeof value === "boolean") return value
+  if (typeof value === "number") return value !== 0
+  var text = String(value).trim().toLowerCase()
+  if (text === "true" || text === "1" || text === "yes" || text === "on") return true
+  if (text === "false" || text === "0" || text === "no" || text === "off") return false
+  return fallback
+}
+
+var SoundCatalog = [
+  { id: "alarm", label: "Alarm", file: "/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga" },
+  { id: "bell", label: "Bell", file: "/usr/share/sounds/freedesktop/stereo/bell.oga" },
+  { id: "chime", label: "Chime", file: "/usr/share/sounds/freedesktop/stereo/complete.oga" },
+  { id: "complete", label: "Complete", file: "/usr/share/sounds/freedesktop/stereo/service-login.oga" },
+  { id: "attention", label: "Instant", file: "/usr/share/sounds/freedesktop/stereo/message-new-instant.oga" },
+  { id: "message", label: "Message", file: "/usr/share/sounds/freedesktop/stereo/device-added.oga" },
+  { id: "pop", label: "Pop", file: "/usr/share/sounds/freedesktop/stereo/message.oga" },
+  { id: "warning", label: "Warning", file: "/usr/share/sounds/freedesktop/stereo/dialog-warning.oga" }
+]
+
+var FlashSpeeds = [
+  { id: "fast", label: "Fast", ms: 90 },
+  { id: "normal", label: "Normal", ms: 140 },
+  { id: "slow", label: "Slow", ms: 220 }
+]
+
+var ScreenModes = [
+  { id: "off", label: "Off" },
+  { id: "background", label: "Background" },
+  { id: "all", label: "Everything" }
+]
+
+function soundEntry(name) {
+  var id = String(name || "complete")
+  var complete = SoundCatalog[0]
+  for (var i = 0; i < SoundCatalog.length; i++) {
+    if (SoundCatalog[i].id === "complete") complete = SoundCatalog[i]
+    if (SoundCatalog[i].id === id) return SoundCatalog[i]
+  }
+  return complete
+}
+
+function soundFile(name) {
+  return soundEntry(name).file
+}
+
+function soundOptions() {
+  var list = []
+  for (var i = 0; i < SoundCatalog.length; i++)
+    list.push({ value: SoundCatalog[i].id, label: SoundCatalog[i].label })
+  return list
+}
+
+function normalizeSoundName(value) {
+  return soundEntry(value).id
+}
+
+function flashSpeedEntry(name) {
+  var id = String(name || "normal").toLowerCase()
+  for (var i = 0; i < FlashSpeeds.length; i++) {
+    if (FlashSpeeds[i].id === id) return FlashSpeeds[i]
+  }
+  return FlashSpeeds[1]
+}
+
+function flashSpeedMs(name) {
+  return flashSpeedEntry(name).ms
+}
+
+function flashSpeedOptions() {
+  var list = []
+  for (var i = 0; i < FlashSpeeds.length; i++)
+    list.push({ value: FlashSpeeds[i].id, label: FlashSpeeds[i].label })
+  return list
+}
+
+function normalizeFlashSpeed(value) {
+  return flashSpeedEntry(value).id
+}
+
+function screenModeEntry(name) {
+  var id = String(name || "").toLowerCase()
+  for (var i = 0; i < ScreenModes.length; i++) {
+    if (ScreenModes[i].id === id) return ScreenModes[i]
+  }
+  return null
+}
+
+function normalizeFlashScreenMode(values) {
+  var mode = screenModeEntry(values && values.flashScreenMode)
+  if (mode) return mode.id
+  if (values && values.flashScreenEnabled !== undefined && values.flashScreenEnabled !== null
+      && values.flashScreenEnabled !== "")
+    return booleanSetting(values.flashScreenEnabled, false) ? "all" : "off"
+  return "off"
+}
+
+function screenModeOptions() {
+  var list = []
+  for (var i = 0; i < ScreenModes.length; i++)
+    list.push({ value: ScreenModes[i].id, label: ScreenModes[i].label })
+  return list
+}
+
+function cycleScreenMode(name, delta) {
+  return cycleCatalog(ScreenModes, name, delta)
+}
+
 function normalizeConfig(settings) {
   var values = settings || {}
   return {
     workMinutes: boundedInteger(values.workMinutes, 25, 1, 120),
     shortBreakMinutes: boundedInteger(values.shortBreakMinutes, 5, 1, 60),
     longBreakMinutes: boundedInteger(values.longBreakMinutes, 15, 1, 120),
-    workPhasesPerLongBreak: boundedInteger(values.workPhasesPerLongBreak, 4, 1, 12)
+    workPhasesPerLongBreak: boundedInteger(values.workPhasesPerLongBreak, 4, 1, 12),
+    soundEnabled: booleanSetting(values.soundEnabled, true),
+    soundName: normalizeSoundName(values.soundName),
+    flashScreenMode: normalizeFlashScreenMode(values),
+    flashBarEnabled: booleanSetting(values.flashBarEnabled, true),
+    flashBorderEnabled: booleanSetting(values.flashBorderEnabled, true),
+    flashCount: boundedInteger(values.flashCount, 3, 1, 8),
+    flashSpeed: normalizeFlashSpeed(values.flashSpeed)
   }
+}
+
+function cycleCatalog(list, id, delta) {
+  var index = 0
+  for (var i = 0; i < list.length; i++) {
+    if (list[i].id === id) { index = i; break }
+  }
+  var next = ((index + delta) % list.length + list.length) % list.length
+  return list[next].id
+}
+
+function cycleSoundName(name, delta) {
+  return cycleCatalog(SoundCatalog, name, delta)
+}
+
+function cycleFlashSpeed(name, delta) {
+  return cycleCatalog(FlashSpeeds, name, delta)
 }
 
 function isPhase(value) {
