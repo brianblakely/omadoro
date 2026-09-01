@@ -17,6 +17,9 @@ Item {
   readonly property string notificationExecutable: omarchyPath !== ""
     ? omarchyPath + "/bin/omarchy-notification-send"
     : "omarchy-notification-send"
+  readonly property string shellIpcExecutable: omarchyPath !== ""
+    ? omarchyPath + "/bin/omarchy-shell"
+    : "omarchy-shell"
 
   property var config: TimerModel.normalizeConfig({})
   property var timerState: TimerModel.stoppedState(config, Date.now())
@@ -38,6 +41,20 @@ Item {
   readonly property bool stopped: status === TimerModel.StatusStopped
   readonly property bool running: status === TimerModel.StatusRunning
   readonly property bool paused: status === TimerModel.StatusPaused
+  readonly property bool awaitingAck: status === TimerModel.StatusAwaitingAck
+
+  // Alert for a finished phase: a non-expiring critical notification plus a
+  // ding that repeats until acknowledge() is called. Neither is a systemd
+  // timer or anything else that would outlive this process, so a shell
+  // restart while awaiting must re-arm both — see initializeIfReady().
+  // Shipped with the plugin (tools/make-alert-sound.py regenerates it): a
+  // bright C7 triple ding. The freedesktop bell.oga used before is a soft,
+  // low, single chime that is trivially missed over music or a call.
+  readonly property string alertSoundPath: Qt.resolvedUrl("alert-ding.wav")
+    .toString().replace("file://", "")
+  property int alertNotificationId: 0
+
+  onAwaitingAckChanged: if (!awaitingAck) silenceAlert()
 
   function configure(settings) {
     var next = TimerModel.normalizeConfig(settings || {})
@@ -68,6 +85,7 @@ Item {
     lastTickMs = Date.now()
     setState(result.state, true)
     if (result.notifyPhase !== "") notifyPhaseStarted(result.notifyPhase)
+    if (result.state.status === TimerModel.StatusAwaitingAck) beginAlert(result.state.phase)
   }
 
   function setState(next, persist) {
@@ -93,14 +111,26 @@ Item {
   }
 
   function addFiveMinutes() {
-    if (!initialized || stopped) return
+    if (!initialized || stopped || awaitingAck) return
     setState(TimerModel.addSeconds(timerState, 5 * 60, Date.now()), true)
   }
 
   function skip() {
-    if (!initialized || stopped) return
+    if (!initialized || stopped || awaitingAck) return
     var now = Date.now()
     setState(TimerModel.advance(timerState, config, now), true)
+    lastTickMs = now
+  }
+
+  // The dismiss action: silences the alert (via onAwaitingAckChanged, once
+  // the status below actually changes) and starts the next phase. Only takes
+  // effect while awaiting; TimerModel.acknowledge() is a no-op otherwise.
+  function acknowledge() {
+    if (!initialized || !awaitingAck) return
+    var now = Date.now()
+    var next = TimerModel.acknowledge(timerState, config, now)
+    setState(next, true)
+    notifyPhaseStarted(next.phase)
     lastTickMs = now
   }
 
@@ -118,16 +148,87 @@ Item {
       var recovered = TimerModel.recoverInterrupted(timerState, config, now)
       setState(recovered.state, true)
       if (recovered.notifyPhase !== "") notifyPhaseStarted(recovered.notifyPhase)
+      if (recovered.state.status === TimerModel.StatusAwaitingAck) beginAlert(recovered.state.phase)
       lastTickMs = now
       return
     }
 
     if (now >= Number(timerState.deadlineMs || 0)) {
-      var next = TimerModel.advance(timerState, config, now)
-      setState(next, true)
-      notifyPhaseStarted(next.phase)
+      var finishedPhase = timerState.phase
+      setState(TimerModel.awaitPhase(timerState, now), true)
+      beginAlert(finishedPhase)
     }
     lastTickMs = now
+  }
+
+  // Fires once when a phase finishes: a critical (non-expiring) notification
+  // plus an immediate ding, then the ding repeats until acknowledge() (or
+  // Stop) ends awaitingAck and onAwaitingAckChanged calls silenceAlert().
+  function beginAlert(finishedPhase) {
+    sendAlertNotification(finishedPhase)
+    playAlertSound()
+    alertSoundTimer.restart()
+  }
+
+  function silenceAlert() {
+    alertSoundTimer.stop()
+    if (alertNotificationId > 0) {
+      Quickshell.execDetached([
+        "busctl", "--user", "call",
+        "org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+        "org.freedesktop.Notifications", "CloseNotification", "u",
+        String(alertNotificationId)
+      ])
+      alertNotificationId = 0
+    }
+  }
+
+  function sendAlertNotification(finishedPhase) {
+    // Announce what clicking will start, and how long it runs — that is the
+    // decision the alert is actually asking about.
+    var upcoming = TimerModel.nextPhaseInfo(timerState, config)
+    var nextLabel = TimerModel.phaseLabel(upcoming.phase)
+    var nextMinutes = Math.round(TimerModel.durationSeconds(upcoming.phase, config) / 60)
+    var title = nextLabel + " — " + nextMinutes + " minutes"
+    var description = TimerModel.phaseLabel(finishedPhase)
+      + " finished. Click this notification to start."
+    // -u critical makes it non-expiring; --exec is what the notification
+    // service runs when the toast is clicked, and must come last.
+    alertNotifyProcess.command = [
+      notificationExecutable,
+      "--app-name", "omadoro",
+      "-g", "󱎫",
+      "-u", "critical",
+      "-p",
+      title,
+      description,
+      "--exec", shellIpcExecutable, "-q", "b.omadoro", "acknowledge"
+    ]
+    alertNotifyProcess.running = true
+  }
+
+  function playAlertSound() {
+    Quickshell.execDetached(["paplay", alertSoundPath])
+  }
+
+  Timer {
+    id: alertSoundTimer
+    interval: 3000
+    repeat: true
+    running: false
+    onTriggered: root.playAlertSound()
+  }
+
+  Process {
+    id: alertNotifyProcess
+    running: false
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var parsed = parseInt(String(text || "").trim(), 10)
+        if (isFinite(parsed) && parsed > 0) root.alertNotificationId = parsed
+      }
+    }
   }
 
   function notifyPhaseStarted(startedPhase) {
@@ -144,6 +245,22 @@ Item {
       title,
       description
     ])
+  }
+
+  // Lets the alert notification's --exec click action drive the same
+  // acknowledge() the bar icon and panel button use.
+  IpcHandler {
+    target: "b.omadoro"
+
+    function acknowledge(): void { root.acknowledge() }
+    function status(): string {
+      return JSON.stringify({
+        status: root.status,
+        phase: root.phase,
+        remainingSeconds: root.remainingSeconds,
+        completedWorkPhases: root.timerState.completedWorkPhases
+      })
+    }
   }
 
   function scheduleSave() {

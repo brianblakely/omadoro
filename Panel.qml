@@ -35,7 +35,7 @@ Panel {
 
   function selectAction(delta) {
     cursorActive = true
-    if (!timerService || timerService.stopped) {
+    if (!timerService || timerService.stopped || timerService.awaitingAck) {
       selectedAction = 0
       return
     }
@@ -44,6 +44,7 @@ Panel {
 
   function activateSelected() {
     if (!timerService || !timerService.initialized) return
+    if (timerService.awaitingAck) { timerService.acknowledge(); return }
     if (selectedAction === 0) timerService.playOrStop()
     else if (selectedAction === 1 && !timerService.stopped) timerService.togglePause()
     else if (selectedAction === 2 && !timerService.stopped) timerService.addFiveMinutes()
@@ -101,7 +102,7 @@ Panel {
             height: width
             progress: root.timerService ? root.timerService.progress : 0
             trackColor: Color.muted
-            fillColor: root.activeColor
+            fillColor: root.timerService && root.timerService.awaitingAck ? Color.urgent : root.activeColor
             strokeWidth: Math.max(5, Style.spaceReal(7))
           }
 
@@ -120,8 +121,12 @@ Panel {
 
             Text {
               anchors.horizontalCenter: parent.horizontalCenter
-              text: root.timerService ? root.timerService.phaseLabel : "Work"
-              color: root.activeColor
+              text: root.timerService
+                ? (root.timerService.awaitingAck
+                    ? root.timerService.phaseLabel + " done — dismiss to continue"
+                    : root.timerService.phaseLabel)
+                : "Work"
+              color: root.timerService && root.timerService.awaitingAck ? Color.urgent : root.activeColor
               font.family: root.fontFamily
               font.pixelSize: Style.font.title
             }
@@ -140,11 +145,14 @@ Panel {
             implicitHeight: actions.buttonSize
             width: actions.buttonSize
             height: actions.buttonSize
-            iconText: root.timerService && root.timerService.stopped ? "" : ""
-            tooltipText: root.timerService && root.timerService.stopped
-              ? "Start a new Pomodoro"
-              : "Stop Pomodoro"
-            foreground: root.foreground
+            iconText: root.timerService && root.timerService.awaitingAck ? ""
+              : (root.timerService && root.timerService.stopped ? "" : "")
+            tooltipText: root.timerService && root.timerService.awaitingAck
+              ? "Dismiss and start next phase"
+              : (root.timerService && root.timerService.stopped
+                  ? "Start a new Pomodoro"
+                  : "Stop Pomodoro")
+            foreground: root.timerService && root.timerService.awaitingAck ? Color.urgent : root.foreground
             accent: root.activeColor
             iconSize: Style.font.iconLarge
             horizontalPadding: 0
@@ -153,7 +161,11 @@ Panel {
             opacity: enabled ? 1 : 0.35
             hasCursor: root.cursorActive && root.selectedAction === 0
             onHovered: function(value) { root.actionHovered(0, value) }
-            onClicked: if (root.timerService) root.timerService.playOrStop()
+            onClicked: {
+              if (!root.timerService) return
+              if (root.timerService.awaitingAck) root.timerService.acknowledge()
+              else root.timerService.playOrStop()
+            }
           }
 
           Button {
@@ -171,7 +183,7 @@ Panel {
             iconSize: Style.font.iconLarge
             horizontalPadding: 0
             verticalPadding: 0
-            enabled: !!root.timerService && root.timerService.initialized && !root.timerService.stopped
+            enabled: !!root.timerService && root.timerService.initialized && !root.timerService.stopped && !root.timerService.awaitingAck
             opacity: enabled ? 1 : 0.35
             hasCursor: root.cursorActive && root.selectedAction === 1
             onHovered: function(value) { root.actionHovered(1, value) }
@@ -191,7 +203,7 @@ Panel {
             iconSize: Style.font.iconLarge
             horizontalPadding: 0
             verticalPadding: 0
-            enabled: !!root.timerService && root.timerService.initialized && !root.timerService.stopped
+            enabled: !!root.timerService && root.timerService.initialized && !root.timerService.stopped && !root.timerService.awaitingAck
             opacity: enabled ? 1 : 0.35
             hasCursor: root.cursorActive && root.selectedAction === 2
             onHovered: function(value) { root.actionHovered(2, value) }
@@ -211,7 +223,7 @@ Panel {
             iconSize: Style.font.iconLarge
             horizontalPadding: 0
             verticalPadding: 0
-            enabled: !!root.timerService && root.timerService.initialized && !root.timerService.stopped
+            enabled: !!root.timerService && root.timerService.initialized && !root.timerService.stopped && !root.timerService.awaitingAck
             opacity: enabled ? 1 : 0.35
             hasCursor: root.cursorActive && root.selectedAction === 3
             onHovered: function(value) { root.actionHovered(3, value) }

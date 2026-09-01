@@ -4,6 +4,7 @@ var StateVersion = 1
 var StatusStopped = "stopped"
 var StatusRunning = "running"
 var StatusPaused = "paused"
+var StatusAwaitingAck = "awaitingAck"
 var PhaseWork = "work"
 var PhaseShortBreak = "shortBreak"
 var PhaseLongBreak = "longBreak"
@@ -34,6 +35,7 @@ function isPhase(value) {
 
 function isStatus(value) {
   return value === StatusStopped || value === StatusRunning || value === StatusPaused
+    || value === StatusAwaitingAck
 }
 
 function phaseLabel(phase) {
@@ -135,7 +137,7 @@ function resume(state, nowMs) {
 }
 
 function addSeconds(state, seconds, nowMs) {
-  if (!state || state.status === StatusStopped) return state
+  if (!state || state.status === StatusStopped || state.status === StatusAwaitingAck) return state
   var addition = Math.max(0, finiteNumber(seconds, 0))
   if (addition === 0) return state
   var now = finiteNumber(nowMs, 0)
@@ -173,6 +175,26 @@ function advance(state, config, nowMs) {
                       durationSeconds(next.phase, config), nowMs)
 }
 
+// A finished phase parks here instead of auto-advancing, so the next phase
+// only starts once the user has actually dismissed the alert.
+function awaitPhase(state, nowMs) {
+  if (!state || state.status !== StatusRunning) return state
+  var now = finiteNumber(nowMs, 0)
+  var next = cloneState(state)
+  next.status = StatusAwaitingAck
+  next.remainingSec = 0
+  next.deadlineMs = 0
+  next.updatedAtMs = now
+  return next
+}
+
+// The dismiss action: only takes effect from awaitingAck, and reuses the
+// normal advance() so the next phase starts exactly as it always has.
+function acknowledge(state, config, nowMs) {
+  if (!state || state.status !== StatusAwaitingAck) return state
+  return advance(state, config, nowMs)
+}
+
 function recoverInterrupted(state, config, nowMs) {
   var now = finiteNumber(nowMs, 0)
   var clean = sanitizeState(state, config, now)
@@ -180,18 +202,27 @@ function recoverInterrupted(state, config, nowMs) {
     return { state: stoppedState(config, now), notifyPhase: "" }
   if (clean.status === StatusPaused)
     return { state: clean, notifyPhase: "" }
-
-  if (clean.phase === PhaseWork)
-    return { state: restartWork(clean, config, now), notifyPhase: PhaseWork }
-
-  if (finiteNumber(clean.deadlineMs, 0) > now) {
-    clean.remainingSec = remainingMilliseconds(clean, now) / 1000
-    clean.updatedAtMs = now
+  // Still waiting for dismissal across the restart: keep it parked, and let
+  // the caller re-arm its own alert (notification/sound) rather than firing
+  // the one-shot "phase started" notification this function normally signals.
+  if (clean.status === StatusAwaitingAck)
     return { state: clean, notifyPhase: "" }
-  }
 
-  var nextWork = advance(clean, config, now)
-  return { state: nextWork, notifyPhase: PhaseWork }
+  // Still running. A phase must never restart and never auto-advance: the only
+  // way out of a finished phase is the user acknowledging it. If the deadline
+  // passed while the shell was away (suspend/resume, a shell restart, or a tick
+  // loop stalled for more than 5s), park it in awaitingAck exactly as the live
+  // tick would have at the instant it ended, and let the caller re-arm the
+  // alert. Previously a running work phase was restarted from full duration
+  // here, so a single suspend during work meant the timer never reached a
+  // break at all; a running break was auto-advanced straight into work without
+  // any acknowledgement.
+  if (finiteNumber(clean.deadlineMs, 0) <= now)
+    return { state: awaitPhase(clean, now), notifyPhase: "" }
+
+  clean.remainingSec = remainingMilliseconds(clean, now) / 1000
+  clean.updatedAtMs = now
+  return { state: clean, notifyPhase: "" }
 }
 
 function sanitizeState(raw, config, nowMs) {

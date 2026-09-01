@@ -76,18 +76,22 @@ BarWidget {
     anchors.fill: parent
     bar: root.bar
     tooltipText: root.timerService
-      ? root.timerService.phaseLabel + " · " + root.timerService.remainingText
+      ? (root.timerService.awaitingAck
+          ? root.timerService.phaseLabel + " finished · click to continue"
+          : root.timerService.phaseLabel + " · " + root.timerService.remainingText)
       : "Omadoro"
     iconComponent: Component {
       CircularProgress {
         progress: root.timerService ? root.timerService.progress : 0
         trackColor: Color.muted
-        fillColor: Color.accent
+        fillColor: root.timerService && root.timerService.awaitingAck ? Color.urgent : Color.accent
         strokeWidth: Math.max(2, Style.spaceReal(2))
       }
     }
     onPressed: function(buttonCode) {
-      if (buttonCode === Qt.LeftButton) root.toggle()
+      if (buttonCode !== Qt.LeftButton) return
+      if (root.timerService && root.timerService.awaitingAck) root.timerService.acknowledge()
+      else root.toggle()
     }
   }
 }
