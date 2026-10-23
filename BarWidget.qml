@@ -26,6 +26,26 @@ BarWidget {
     injectPanel()
   }
 
+  // The panel's duration controls write straight back to this widget's entry
+  // in shell.json, so the change survives restarts the way the CLI-set values
+  // do. Only the changed key is merged in, leaving the rest of the entry —
+  // placement, other settings — untouched.
+  function applySetting(key, value) {
+    if (timerService && typeof timerService.setConfigValue === "function")
+      timerService.setConfigValue(key, value)
+
+    var merged = {}
+    for (var name in settings) merged[name] = settings[name]
+    merged[key] = value
+
+    var api = bar ? bar.shell : null
+    if (api && typeof api.updateEntryInline === "function") {
+      api.updateEntryInline(moduleName, merged)
+      return
+    }
+    console.warn("Omadoro: could not persist " + key)
+  }
+
   function injectPanel() {
     var target = panelLoader.item
     if (!target) return

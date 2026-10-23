@@ -28,6 +28,23 @@ assert.deepEqual(
   "configuration values are integer-clamped to the manifest ranges"
 )
 
+assert.deepEqual(
+  { ...model.configBounds("workMinutes") },
+  { minimum: 1, maximum: 120 },
+  "the panel reads its work range from the shared bounds"
+)
+assert.deepEqual(
+  { ...model.configBounds("shortBreakMinutes") },
+  { minimum: 1, maximum: 60 },
+  "the panel reads its short-break range from the shared bounds"
+)
+assert.equal(model.clampDuration("workMinutes", 0), 1, "typed values clamp up to the range")
+assert.equal(model.clampDuration("workMinutes", 999), 120, "typed values clamp down to the range")
+assert.equal(model.clampDuration("shortBreakMinutes", "7"), 7, "numeric strings from the editor are accepted")
+assert.equal(model.clampDuration("shortBreakMinutes", 12.4), 12, "typed values round to whole minutes")
+assert.equal(model.clampDuration("workPhasesPerLongBreak", 0), 1, "phase counts share the same clamp")
+assert.equal(model.clampDuration("notAKey", 5), null, "unknown keys are rejected instead of coerced")
+
 let state = model.stoppedState(config, 0)
 assert.equal(state.status, model.StatusStopped)
 assert.equal(state.phase, model.PhaseWork)

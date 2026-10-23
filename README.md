@@ -21,6 +21,7 @@ Click the bar icon to open the timer panel.
 | `` / `` | Pause or resume                           |
 | `󰐕`       | Add five minutes                          |
 | ``       | Skip to the next phase                    |
+| ``      | Set work and break durations              |
 
 When the timer is stopped, press Play to begin a fresh cycle. Omadoro switches
 between work and break phases automatically and sends a notification when the
@@ -52,13 +53,18 @@ omarchy-shell shell toggle b.omadoro
 Change the phase lengths and long-break frequency through Omarchy:
 
 ```bash
-omarchy bar plugin set b.omadoro workMinutes 25 --json
-omarchy bar plugin set b.omadoro shortBreakMinutes 5 --json
-omarchy bar plugin set b.omadoro longBreakMinutes 15 --json
-omarchy bar plugin set b.omadoro workPhasesPerLongBreak 4 --json
+omarchy bar set b.omadoro workMinutes 25 --json
+omarchy bar set b.omadoro shortBreakMinutes 5 --json
+omarchy bar set b.omadoro longBreakMinutes 15 --json
+omarchy bar set b.omadoro workPhasesPerLongBreak 4 --json
 ```
 
 New values apply from the next phase onward.
+
+Work and break durations can also be set from the panel: click the gear, then
+drag a slider or type the minutes into the field beside it. Both routes write
+the same bar setting, so a value set in the panel is what `omarchy bar get`
+reports and what survives a restart.
 
 ## Update
 

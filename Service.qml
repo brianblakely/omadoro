@@ -51,6 +51,17 @@ Item {
     initializeIfReady()
   }
 
+  // Apply one duration change before the shell.json round trip lands, so the
+  // panel never snaps back to the old value for a frame. configure() clamps
+  // and, while stopped, retimes the face; the persisted settings that follow
+  // resolve to the same config and therefore do nothing.
+  function setConfigValue(key, value) {
+    var values = {}
+    for (var name in config) values[name] = config[name]
+    values[key] = value
+    configure(values)
+  }
+
   function initializeIfReady() {
     if (initialized || !configReady || !stateFileLoaded) return
 

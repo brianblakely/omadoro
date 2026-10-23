@@ -18,6 +18,28 @@ function boundedInteger(value, fallback, minimum, maximum) {
   return Math.max(minimum, Math.min(maximum, parsed))
 }
 
+// One place for the ranges the manifest already publishes. The panel's
+// duration controls step and type against these instead of hardcoding them a
+// second time, so a manifest range change only has to land here as well.
+var ConfigBounds = {
+  workMinutes: { minimum: 1, maximum: 120 },
+  shortBreakMinutes: { minimum: 1, maximum: 60 },
+  longBreakMinutes: { minimum: 1, maximum: 120 },
+  workPhasesPerLongBreak: { minimum: 1, maximum: 12 }
+}
+
+function configBounds(key) {
+  return ConfigBounds[key] || null
+}
+
+// Clamp a typed or stepped value to its range. Returns null for a key the
+// timer has no duration for, so callers can ignore it rather than write NaN.
+function clampDuration(key, value) {
+  var bounds = ConfigBounds[key]
+  if (!bounds) return null
+  return boundedInteger(value, bounds.minimum, bounds.minimum, bounds.maximum)
+}
+
 function normalizeConfig(settings) {
   var values = settings || {}
   return {
